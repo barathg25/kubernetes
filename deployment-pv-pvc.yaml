@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: barathg25/html
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: local-persistent-storage
+          mountPath: "/data"
+      volumes:
+      - name: local-persistent-storage
+        persistentVolumeClaim:
+          claimName: test-pvc
