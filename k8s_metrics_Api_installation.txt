@@ -1,0 +1,185 @@
+# SOP: Configure Metrics API (metrics-server) in Kubernetes
+
+## Objective
+
+Enable Kubernetes Metrics API to allow:
+
+* `kubectl top nodes`
+* `kubectl top pods`
+* Horizontal Pod Autoscaler (HPA)
+* Resource monitoring visibility
+
+---
+
+# 1. Pre-Checks
+
+## 1.1 Verify Cluster Access
+
+Ensure kubectl is configured:
+
+```
+kubectl get nodes
+```
+
+Cluster must be reachable and nodes should be in Ready state.
+
+---
+
+# 2. Install Metrics Server
+
+## 2.1 Apply Official Manifest
+
+```
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+---
+
+# 3. Configure Metrics Server for Most Environments
+
+In many private / on-prem clusters, kubelet uses self-signed certificates.
+To avoid TLS errors, configure insecure TLS mode.
+
+## 3.1 Edit Deployment
+
+```
+kubectl edit deployment metrics-server -n kube-system
+```
+
+## 3.2 Ensure Container Args Include:
+
+```
+- --cert-dir=/tmp
+- --secure-port=10250
+- --kubelet-insecure-tls
+- --kubelet-preferred-address-types=InternalIP
+- --kubelet-use-node-status-port
+- --metric-resolution=15s
+```
+
+Important:
+
+* Keep `--secure-port=10250`
+* Do NOT change container port unless probes are also modified
+* Ensure no duplicate arguments exist
+
+Save and exit.
+
+---
+
+# 4. Restart Deployment
+
+```
+kubectl rollout restart deployment metrics-server -n kube-system
+```
+
+Wait 30–60 seconds.
+
+---
+
+# 5. Verify Pod Health
+
+```
+kubectl get pods -n kube-system | grep metrics
+```
+
+Expected output:
+
+```
+metrics-server-xxxxx   1/1   Running
+```
+
+If status shows `0/1 Running`, describe the pod:
+
+```
+kubectl describe pod <metrics-pod-name> -n kube-system
+```
+
+Common errors:
+
+* Readiness probe failed → Port mismatch
+* x509 certificate error → Missing `--kubelet-insecure-tls`
+
+---
+
+# 6. Validate Metrics API
+
+## 6.1 Check Nodes
+
+```
+kubectl top nodes
+```
+
+## 6.2 Check Pods
+
+```
+kubectl top pods -A
+```
+
+If metrics API is working, CPU and memory usage will be displayed.
+
+---
+
+# 7. Troubleshooting Guide
+
+## Issue: "Metrics API not available"
+
+Cause: metrics-server not installed or not ready
+Action:
+
+* Verify pod status
+* Check logs
+
+## Issue: Readiness probe failed (connection refused)
+
+Cause: Secure port mismatch
+Action:
+
+* Ensure `--secure-port=10250`
+* Ensure probes use same port
+
+## Issue: x509 certificate error
+
+Cause: Self-signed kubelet cert
+Action:
+
+* Add `--kubelet-insecure-tls`
+
+## Issue: HPA not scaling
+
+Cause: Metrics API not responding
+Action:
+
+* Verify `kubectl top nodes` works
+
+---
+
+# 8. Production Best Practices
+
+* Do not expose metrics-server externally
+* Keep it in kube-system namespace
+* Do not modify service ports unless necessary
+* Monitor resource usage (default request: 100m CPU, 200Mi memory)
+* Ensure network connectivity from metrics-server to all nodes on kubelet port
+
+---
+
+# 9. Verification Checklist
+
+* [ ] metrics-server pod 1/1 Running
+* [ ] kubectl top nodes works
+* [ ] kubectl top pods works
+* [ ] No readiness/liveness probe failures
+* [ ] HPA able to fetch metrics
+
+---
+
+# Completion Criteria
+
+Metrics API is successfully configured when:
+
+* Resource usage is visible via kubectl
+* HPA can scale workloads
+* No restart loops in metrics-server pod
+
+End of SOP
