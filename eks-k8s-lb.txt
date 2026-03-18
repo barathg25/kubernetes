@@ -1,0 +1,95 @@
+docker buildx create --use --name mybuilder --driver docker-container
+
+
+docker buildx inspect --bootstrap
+
+docker buildx build --platform linux/amd64,linux/arm64 -t comuse/art-sit-b2c-ui:1 --push .
+
+docker buildx build --platform linux/amd64,linux/arm64 -t comuse/sit-visaas-fuse-ui --push .
+
+
+aws eks --region ap-south-1 update-kubeconfig --name cts-eks
+
+
+export KUBECONFIG=/root/.kube/config
+
+Need to allow eks security group in jump server
+Need to open 443 port number in jump server sg
+
+
+Install AWS Load Balancer Controller with Helm
+
+
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+
+aws iam create-policy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-document file://iam_policy.json
+
+#====================================================
+INSTALL EKSCTL
+curl -LO "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz"
+
+tar -xzf eksctl_$(uname -s)_amd64.tar.gz
+
+sudo mv eksctl /usr/local/bin
+eksctl version
+#====================================================
+
+eksctl utils associate-iam-oidc-provider --region=ap-south-1 --cluster=vizsaas --approve
+
+
+Change account id and cluster name
+
+eksctl create iamserviceaccount \
+  --cluster=vizsaas \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --role-name AmazonEKSLoadBalancerControllerRole \
+  --attach-policy-arn=arn:aws:iam::585008064322:policy/AWSLoadBalancerControllerIAMPolicy \
+  --approve
+
+#====================================================
+
+Helm installation
+https://docs.aws.amazon.com/eks/latest/userguide/lbc-helm.html
+
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+helm repo add eks https://aws.github.io/eks-charts
+
+helm repo update eks
+
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=vizsaas \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller 
+
+#====================================================
+#new changes after some period
+#====================================================
+#add region and vpc id
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+-n kube-system \
+--set clusterName=vizsaas \
+--set serviceAccount.create=false \
+--set serviceAccount.name=aws-load-balancer-controller \
+--set region=ap-south-1 \
+--set vpcId=vpc-0d326196059d9ac3f
+
+kubectl logs -f -n kube-system -l app.kubernetes.io/instance=aws-load-balancer-controller
+
+#====================================================
+
+eksctl create cluster \
+  --name visaas \
+  --region ap-south-1 \
+  --managed
+
+
+  helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=visaas \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller
